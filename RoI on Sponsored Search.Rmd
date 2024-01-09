@@ -1,0 +1,138 @@
+---
+author: "Jessica Cheng, Claire Tsao"
+date: "2023-11-11"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+# Business Overview
+
+Bazaar(Bazaar.com) is a leading online retailer in the United States that runs paid ads on two major search engines, Google and Bing, using display and search engine advertising. Bazaar's paid ads keywords are classified into two board categories: branded and non-branded. Branded keywords include keywords such as "Bazaar," and "Bazaar shoes" that contain the Bazaar brand name. In contrast, non-branded keywords include keywords such as "shoes" and "guitar" that do not contain the Bazaar brand name.
+
+Regarding the sponsored search ads for branded keywords on Google, Bob, a senior marketing analyst at Bazaar, conducted the 320% ROI on this ad spend. However, his ROI analysis is skeptical because it is possible that people who searched with the word "Bazaar" already have the intention to visit Bazaar.com, hence the effectiveness of branded keyword ads is implausible. 
+
+Our goal here is to report an accurate estimate of the ROI associated with Sponsored Search advertising being run by Bazaar.com, based on the natural experiment by addressing the following set of questions:
+
+1. What is Wrong with Bob’s ROI analysis?
+2. what are the treatment and control of the experiment? What's potential threat of experiment? 
+3. Is the First Difference reliable to estimate the casual effect of the treatment?
+4. How should we compare with Difference-in-Differences estimator?
+5. Based on new treatment effect, what should be the corrected ROI?
+
+# What is Wrong with Bob’s ROI analysis?
+
+**Overvaluation of Sponsored Ads Revenue**
+
+Bob's ROI calculation assumes that all clicks from sponsored ads are exclusively driven by those ads. It implies that individuals searching with the term "Bazaar" do not already have the intention to visit Bazaar.com. However, it overlooks the fact that a certain proportion of users may naturally navigate to Bazaar.com through organic search results, irrespective of encountering the sponsored ads. 
+
+Therefore, if Bob included "branded keywords search" from these proportion of users visiting through the sponsored ads as causal, ROI will probably be overestimated the revenue bought by sponsored ads.
+
+
+# Define the Treatment and Control
+The experiment run sponsored ad campaign for 12 weeks on four different websites, including Google, Yahoo, Bing, Ask. In this case, the unit of observation is the weekly traffic from each platform. Since there is a technical glitch happened on week 10-12, resulting in no sponsored ads on Google platform. The treatment group in this experiment is Google and other search engines (Yahoo, Bing, Ask) be as the control group.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(plm)
+```
+
+# Data Overview
+```{r}
+data = read.csv("did_sponsored_ads.csv")
+treatment_week = c(10,11,12)
+data = data %>% mutate(treat = ifelse(platform == 'goog', 1, 0),
+                       after = ifelse(week %in% treatment_week, 1, 0),
+                       avg_total = avg_spons + avg_org)
+```
+
+# Use First Difference Estimate for ads on Google
+We examined first difference estimate on Google before and after the technical glitching
+```{r}
+model1 <- lm(log(avg_total)~ after, data=data %>% filter(treat==1))
+summary(model1)
+```
+**From the coefficient for after variable is 0.001306, representing the estimated change in the total average web traffic associated in week 10-12 is 0.13%. However, the coefficient is very small (close to zero), and the p-value is very high (0.998), indicating that there is no statistically evidence to reject the null hypothesis that coefficient is zero. Therefore, there is no evidence of a significant change in the total average web traffic. It would be beneficial to explore other specification model, such as Difference-in-Difference model, to obtain a more robust estimate of the treatment effect.
+
+# Calculate the Difference-in-Difference 
+
+## Check Parallel Trend Assumption
+**Step1. Visualization the trends**
+```{r}
+week_ave = data %>% group_by(week, treat) %>%
+  summarise(avg_traffic = mean(avg_total), .groups="drop")
+            
+ggplot(week_ave, aes(x = week, y = avg_traffic, color = factor(treat))) + 
+  geom_line() + 
+  geom_vline(xintercept = 9, linetype='dotted') +
+  theme_bw()
+```
+
+```{r}
+data %>%
+  filter(platform %in% c('bing', 'yahoo', 'ask', 'goog')) %>%
+  ggplot(aes(x = week, y = avg_total, color = platform)) +
+  geom_line() +
+  geom_vline(xintercept = 9, color = 'red') +
+  scale_x_continuous(breaks = seq(1, 12, by = 1)) +
+  labs(y = "Total Traffic", x = "Week") +
+  theme_bw() +
+  theme(legend.title = element_blank())
+```
+From above visualization, we can observe some parallel trends pre-treatment with some difference. Hence, we used the dynamic DiD to check if the pre-treatment are not significant.
+
+**Step2. Run Dynamic DiD**
+
+Before performing the DiD analysis, we check whether the parallel trend assumption holds using t.test
+```{r}
+data_did <- lm(avg_total ~ treat*factor(week), data = data)
+summary(data_did)
+```
+From the result we should mainly focus on the interaction terms to see if the treatment and control groups had parallel trends before the treatment. If the coefficients for these interaction terms are not statistically significant, it suggests that there is no evidence of supporting the parallel trends assumption. However, we still performed a DiD regression to estimate the true causality of the sponsored ads.
+
+**Step3. Run DiD Regression**
+```{r}
+did_data <- lm(avg_total ~ treat*after, data=data)
+summary(did_data)
+```
+From above result we can observe that after implementing the sponsored ads treatment on the Google platform, there is a statistically significant decrease of 9910.6 clicks per week compared to other platforms. This DiD estimate provides a more accurate measure of the causal effect of the treatment.
+
+# Based on new treatment effect, what should be the corrected ROI?
+
+**Step1. perform the DiD model to figure out the causality of the sponsored ads**
+
+Without the sponsored ads on Google, the total clicks of bazaar.com decrease about 9910 on average per week, which represents the clicks that truly motivated by sponsored ads
+```{r}
+tot_did <- lm(avg_total ~ treat*after, data)
+summary(tot_did)
+```
+**Step2. perform the DiD model to figure out the causality of the organic results**
+
+In the absent of running sponsored ads on Google, the clicks from organic search results to visit Bazaar increase about 2293 on average
+```{r}
+org_did <- lm(avg_org ~ treat*after, data)
+summary(org_did)
+```
+**Step3. calculate new ROI **
+
+To calculate the correct ROI, we need to know the proportion of click that truly motivated by sponsored ads
+
+- The proportion of click that truly motivated by sponsored ads = The clicks that truly motivated by sponsored ads / The total clicks from sponsored ads
+
+- The total clicks from sponsored ads = The clicks that truly motivated by sponsored ads + The clicks from organic results in the absent of sponsored ads
+```{r}
+ture_proportion = 9910 / (9910+2293)
+ture_proportion
+```
+
+New ROI = 
+[(Margin per conversion * probability of click *  The proportion of click that truly motivated by sponsored ads) - cost per click] / cost per click = **2.41**
+```{r}
+New_ROI = ((21*0.12*ture_proportion) - 0.6)/0.6
+New_ROI
+```
+
+# Conclusion
+
+Upon reevaluation, the accurate ROI of the sponsored search ads for branded keywords on Google is estimated to be 241%, considering the refined treatment effect. Despite the skepticism raised by Bob regarding the effectiveness of branded keyword ads, this revised ROI underscores the continued positive performance of our sponsored ads strategy.
