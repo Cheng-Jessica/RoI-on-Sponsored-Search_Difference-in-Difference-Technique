@@ -1,5 +1,6 @@
 ## "Difference in Difference" - Bazaar.com
 
+### Technique: R, Difference in Difference
 ### The ultimate goal is to report an accurate estimate of the Return on Investment associated with Sponsored Search advertising being run by Bazaar.com, based on the natural experiment. You should address the following set of questions as part of your report:
 
 - (a) What is Wrong with Bob’s RoI Calculation? Explain in words what is problematic with Bob’s approach to calculating the RoI associated with sponsored search ads? Hint: think about what visitors might do instead, in the absence of sponsored ads from Bazaar.com when they run a Google search.
